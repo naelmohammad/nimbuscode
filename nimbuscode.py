@@ -124,7 +124,7 @@ def extract_code_blocks(markdown_text: str) -> List[str]:
     current_block = []
     
     for line in lines:
-        if line.startswith('```'):
+        if line.strip().startswith('```'):
             if in_code_block:
                 code_blocks.append('\n'.join(current_block))
                 current_block = []
