@@ -1,523 +1,319 @@
 #!/usr/bin/env python3
 """
-NimbusCode - Lightweight AI coding assistant using OpenRouter's free models.
+NimbusCode - A lightweight, portable AI coding assistant powered by OpenRouter's free models.
 """
 
+import argparse
+import json
 import os
 import sys
-import json
+import configparser
 import textwrap
 from pathlib import Path
-from typing import Optional, List, Dict, Any
-
-import typer
 import requests
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.syntax import Syntax
-from rich.prompt import Prompt
-from dotenv import load_dotenv
+from typing import Optional, Dict, Any, List
 
-# Initialize Typer app
-app = typer.Typer(help="NimbusCode - AI coding assistant")
-console = Console()
+CONFIG_DIR = Path.home() / ".config" / "nimbuscode"
+CONFIG_FILE = CONFIG_DIR / "config.ini"
+DEFAULT_MODEL = "mistralai/mistral-7b-instruct:free"
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Load environment variables
-load_dotenv()
-
-# Constants
-CONFIG_DIR = Path.home() / ".nimbuscode"
-CONFIG_FILE = CONFIG_DIR / "config.json"
-DEFAULT_MODEL = "openrouter/auto"  # Will select the best free model automatically
-DEFAULT_CONTEXT_WINDOW = 8192  # Default context window size
-
-def ensure_config_dir():
-    """Ensure the configuration directory exists."""
-    CONFIG_DIR.mkdir(exist_ok=True)
+class NimbusCode:
+    def __init__(self):
+        self.config = self._load_config()
+        self.api_key = self._get_api_key()
+        
+    def _load_config(self) -> configparser.ConfigParser:
+        """Load configuration from config file."""
+        config = configparser.ConfigParser()
+        if CONFIG_FILE.exists():
+            config.read(CONFIG_FILE)
+        if "DEFAULT" not in config:
+            config["DEFAULT"] = {}
+        if "API" not in config:
+            config["API"] = {}
+        return config
     
-    if not CONFIG_FILE.exists():
-        default_config = {
-            "api_key": "",
-            "model": DEFAULT_MODEL,
-            "max_tokens": 1024,
-            "temperature": 0.7,
-        }
+    def _save_config(self) -> None:
+        """Save configuration to config file."""
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         with open(CONFIG_FILE, "w") as f:
-            json.dump(default_config, f, indent=2)
-        console.print("[yellow]Config file created at ~/.nimbuscode/config.json[/yellow]")
-        console.print("[yellow]Please set your OpenRouter API key with 'nimbuscode config --api-key YOUR_API_KEY'[/yellow]")
-
-def load_config() -> Dict[str, Any]:
-    """Load configuration from file."""
-    ensure_config_dir()
-    try:
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    except Exception as e:
-        console.print(f"[red]Error loading config: {e}[/red]")
-        return {
-            "api_key": os.environ.get("OPENROUTER_API_KEY", ""),
-            "model": DEFAULT_MODEL,
-            "max_tokens": 1024,
-            "temperature": 0.7,
+            self.config.write(f)
+    
+    def _get_api_key(self) -> Optional[str]:
+        """Get API key from environment variable or config file."""
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key and "api_key" in self.config["API"]:
+            api_key = self.config["API"]["api_key"]
+        return api_key
+    
+    def set_api_key(self, api_key: str) -> None:
+        """Set API key in config file."""
+        self.config["API"]["api_key"] = api_key
+        self._save_config()
+        self.api_key = api_key
+        print("API key saved successfully.")
+    
+    def _make_request(self, messages: List[Dict[str, str]], model: str = None) -> Dict[str, Any]:
+        """Make a request to the OpenRouter API."""
+        if not self.api_key:
+            print("Error: API key not set. Use 'nimbuscode config --api-key YOUR_API_KEY' or set the OPENROUTER_API_KEY environment variable.")
+            sys.exit(1)
+        
+        if not model:
+            model = self.config["API"].get("default_model", DEFAULT_MODEL)
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/naelmohammad/nimbuscode",
+            "X-Title": "NimbusCode"
         }
-
-def save_config(config: Dict[str, Any]):
-    """Save configuration to file."""
-    ensure_config_dir()
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
-
-def get_api_key() -> str:
-    """Get the API key from config or environment."""
-    config = load_config()
-    api_key = config.get("api_key") or os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        console.print("[red]API key not found. Please set it with 'nimbuscode config --api-key YOUR_API_KEY'[/red]")
-        sys.exit(1)
-    return api_key
-
-def query_openrouter(prompt: str, system_prompt: str = None) -> str:
-    """Query the OpenRouter API with the given prompt."""
-    config = load_config()
-    api_key = get_api_key()
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/cline/cline",  # Required for OpenRouter
-    }
-    
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
-    
-    data = {
-        "model": config.get("model", DEFAULT_MODEL),
-        "messages": messages,
-        "max_tokens": config.get("max_tokens", 1024),
-        "temperature": config.get("temperature", 0.7),
-    }
-    
-    try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=data,
-        )
-        response.raise_for_status()
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        console.print(f"[red]Error querying OpenRouter API: {e}[/red]")
-        if hasattr(e, "response") and hasattr(e.response, "text"):
-            console.print(f"[red]Response: {e.response.text}[/red]")
-        return f"Error: {str(e)}"
-
-def extract_code_blocks(markdown_text: str) -> List[str]:
-    """Extract code blocks from markdown text."""
-    code_blocks = []
-    lines = markdown_text.split('\n')
-    in_code_block = False
-    current_block = []
-    
-    for line in lines:
-        if line.strip().startswith('```'):
-            if in_code_block:
-                code_blocks.append('\n'.join(current_block))
-                current_block = []
-                in_code_block = False
-            else:
-                in_code_block = True
-                # Skip the language identifier line
-                continue
-        elif in_code_block:
-            current_block.append(line)
-    
-    return code_blocks
-
-@app.command("ask")
-def ask(
-    prompt: List[str] = typer.Argument(..., help="The prompt to send to the AI"),
-    file: Optional[Path] = typer.Option(None, "--file", "-f", help="File to use as context"),
-    system: Optional[str] = typer.Option(None, "--system", "-s", help="System prompt to use"),
-    save: Optional[Path] = typer.Option(None, "--save", help="Save the response to a file"),
-    extract: bool = typer.Option(False, "--extract", "-e", help="Extract and save code blocks"),
-):
-    """Ask the AI a coding question."""
-    full_prompt = " ".join(prompt)
-    
-    # Add file content to prompt if specified
-    if file and file.exists():
-        with open(file, "r") as f:
-            file_content = f.read()
-        full_prompt = f"File content:\n```\n{file_content}\n```\n\nPrompt: {full_prompt}"
-    
-    # Default system prompt for coding assistance
-    default_system_prompt = """
-    You are NimbusCode, an expert programming assistant. Your goal is to help the user write high-quality, 
-    efficient, and secure code. Provide clear, concise explanations and code examples.
-    Focus on best practices, performance optimization, and security considerations.
-    When appropriate, suggest improvements to the user's code or approach.
-    """
-    
-    system_prompt = system or default_system_prompt
-    
-    with console.status("[bold green]Thinking..."):
-        response = query_openrouter(full_prompt, system_prompt)
-    
-    # Display the response
-    console.print(Panel(Markdown(response), title="NimbusCode", border_style="blue"))
-    
-    # Save response if requested
-    if save:
-        with open(save, "w") as f:
-            f.write(response)
-        console.print(f"[green]Response saved to {save}[/green]")
-    
-    # Extract and save code blocks if requested
-    if extract:
-        code_blocks = extract_code_blocks(response)
-        if code_blocks:
-            for i, block in enumerate(code_blocks):
-                filename = f"code_block_{i+1}.txt"
-                with open(filename, "w") as f:
-                    f.write(block)
-                console.print(f"[green]Code block saved to {filename}[/green]")
-        else:
-            console.print("[yellow]No code blocks found in the response[/yellow]")
-
-@app.command("config")
-def config(
-    api_key: Optional[str] = typer.Option(None, "--api-key", help="Set the OpenRouter API key"),
-    model: Optional[str] = typer.Option(None, "--model", help="Set the default model"),
-    max_tokens: Optional[int] = typer.Option(None, "--max-tokens", help="Set the maximum tokens"),
-    temperature: Optional[float] = typer.Option(None, "--temperature", help="Set the temperature"),
-    show: bool = typer.Option(False, "--show", help="Show the current configuration"),
-):
-    """Configure NimbusCode settings."""
-    current_config = load_config()
-    
-    if show:
-        # Hide API key for security
-        display_config = current_config.copy()
-        if "api_key" in display_config and display_config["api_key"]:
-            display_config["api_key"] = "********" + display_config["api_key"][-4:]
-        console.print(json.dumps(display_config, indent=2))
-        return
-    
-    if api_key:
-        current_config["api_key"] = api_key
-    
-    if model:
-        current_config["model"] = model
-    
-    if max_tokens is not None:
-        current_config["max_tokens"] = max_tokens
-    
-    if temperature is not None:
-        current_config["temperature"] = temperature
-    
-    save_config(current_config)
-    console.print("[green]Configuration updated successfully[/green]")
-
-@app.command("models")
-def list_models():
-    """List available models from OpenRouter."""
-    api_key = get_api_key()
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    
-    try:
-        with console.status("[bold green]Fetching available models..."):
-            response = requests.get(
-                "https://openrouter.ai/api/v1/models",
-                headers=headers,
-            )
-            response.raise_for_status()
-            models = response.json()
         
-        console.print("[bold]Available Models:[/bold]")
+        data = {
+            "model": model,
+            "messages": messages
+        }
         
-        # Filter for free models
-        free_models = []
-        for model in models["data"]:
-            if "pricing" in model and model["pricing"].get("prompt", 0) == 0 and model["pricing"].get("completion", 0) == 0:
-                free_models.append(model)
-        
-        if free_models:
-            console.print("[bold green]Free Models:[/bold green]")
-            for model in free_models:
-                console.print(f"  [green]{model['id']}[/green]")
-                console.print(f"    Context: {model.get('context_length', 'Unknown')}")
-                console.print(f"    Description: {model.get('description', 'No description')}")
-                console.print("")
-        else:
-            console.print("[yellow]No free models found[/yellow]")
-            
-    except Exception as e:
-        console.print(f"[red]Error fetching models: {e}[/red]")
-
-@app.command("improve")
-def improve_code(
-    file: Path = typer.Argument(..., help="File containing code to improve"),
-    save: Optional[Path] = typer.Option(None, "--save", help="Save the improved code to a file"),
-):
-    """Improve existing code with AI suggestions."""
-    if not file.exists():
-        console.print(f"[red]File {file} does not exist[/red]")
-        return
-    
-    with open(file, "r") as f:
-        code = f.read()
-    
-    prompt = f"""
-    Please improve the following code. Focus on:
-    1. Code quality and readability
-    2. Performance optimizations
-    3. Security best practices
-    4. Error handling
-    5. Documentation
-    
-    Provide the improved code and explain your changes.
-    
-    ```
-    {code}
-    ```
-    """
-    
-    system_prompt = """
-    You are NimbusCode, an expert code reviewer and optimizer. Analyze the provided code and suggest
-    improvements. Return the improved code in a markdown code block with the same language as the original.
-    Explain your changes clearly but concisely.
-    """
-    
-    with console.status("[bold green]Analyzing and improving code..."):
-        response = query_openrouter(prompt, system_prompt)
-    
-    console.print(Panel(Markdown(response), title=f"Code Improvements for {file.name}", border_style="blue"))
-    
-    # Extract and save the improved code if requested
-    if save:
-        code_blocks = extract_code_blocks(response)
-        if code_blocks:
-            with open(save, "w") as f:
-                f.write(code_blocks[0])  # Save the first code block
-            console.print(f"[green]Improved code saved to {save}[/green]")
-        else:
-            console.print("[yellow]No code blocks found in the response[/yellow]")
-
-@app.command("explain")
-def explain_code(
-    file: Path = typer.Argument(..., help="File containing code to explain"),
-):
-    """Explain code with detailed comments and documentation."""
-    if not file.exists():
-        console.print(f"[red]File {file} does not exist[/red]")
-        return
-    
-    with open(file, "r") as f:
-        code = f.read()
-    
-    prompt = f"""
-    Please explain the following code in detail:
-    
-    ```
-    {code}
-    ```
-    
-    Include:
-    1. Overall purpose and functionality
-    2. Breakdown of key components
-    3. How the different parts work together
-    4. Any potential issues or considerations
-    """
-    
-    system_prompt = """
-    You are NimbusCode, an expert code analyst. Provide a clear, educational explanation of the code.
-    Break down complex concepts and use examples where helpful. Your goal is to help the user fully
-    understand how the code works.
-    """
-    
-    with console.status("[bold green]Analyzing code..."):
-        response = query_openrouter(prompt, system_prompt)
-    
-    console.print(Panel(Markdown(response), title=f"Code Explanation for {file.name}", border_style="blue"))
-
-@app.command("generate")
-def generate_code(
-    prompt: List[str] = typer.Argument(..., help="Description of the code to generate"),
-    language: str = typer.Option("python", "--language", "-l", help="Programming language"),
-    save: Optional[Path] = typer.Option(None, "--save", help="Save the generated code to a file"),
-):
-    """Generate code based on a description."""
-    full_prompt = " ".join(prompt)
-    
-    prompt = f"""
-    Generate {language} code for the following:
-    
-    {full_prompt}
-    
-    Provide complete, working code with appropriate comments and documentation.
-    """
-    
-    system_prompt = f"""
-    You are NimbusCode, an expert {language} developer. Generate high-quality, efficient, and secure code
-    based on the user's requirements. Include helpful comments and documentation. Focus on best practices
-    and maintainability.
-    """
-    
-    with console.status("[bold green]Generating code..."):
-        response = query_openrouter(prompt, system_prompt)
-    
-    console.print(Panel(Markdown(response), title=f"Generated {language.capitalize()} Code", border_style="blue"))
-    
-    # Extract and save the generated code if requested
-    if save:
-        code_blocks = extract_code_blocks(response)
-        if code_blocks:
-            with open(save, "w") as f:
-                f.write(code_blocks[0])  # Save the first code block
-            console.print(f"[green]Generated code saved to {save}[/green]")
-        else:
-            console.print("[yellow]No code blocks found in the response[/yellow]")
-
-@app.command("cloud")
-def cloud_deployment(
-    prompt: List[str] = typer.Argument(..., help="Description of the cloud deployment"),
-    provider: str = typer.Option("aws", "--provider", "-p", help="Cloud provider (aws, azure, gcp)"),
-    save: Optional[Path] = typer.Option(None, "--save", help="Save the deployment code to a file"),
-):
-    """Generate cloud deployment code or instructions."""
-    full_prompt = " ".join(prompt)
-    
-    prompt = f"""
-    Generate {provider.upper()} cloud deployment code/instructions for:
-    
-    {full_prompt}
-    
-    Include:
-    1. Required resources and services
-    2. Infrastructure as Code (if applicable)
-    3. Deployment steps
-    4. Security considerations
-    5. Cost optimization tips
-    """
-    
-    system_prompt = f"""
-    You are NimbusCode, an expert in cloud architecture and deployment on {provider.upper()}.
-    Provide detailed, practical guidance for deploying applications to the cloud.
-    Focus on security best practices, cost optimization, and maintainability.
-    """
-    
-    with console.status("[bold green]Generating cloud deployment plan..."):
-        response = query_openrouter(prompt, system_prompt)
-    
-    console.print(Panel(Markdown(response), title=f"{provider.upper()} Deployment Plan", border_style="blue"))
-    
-    # Save the response if requested
-    if save:
-        with open(save, "w") as f:
-            f.write(response)
-        console.print(f"[green]Deployment plan saved to {save}[/green]")
-
-@app.command("mobile")
-def mobile_development(
-    prompt: List[str] = typer.Argument(..., help="Description of the mobile app"),
-    platform: str = typer.Option("cross", "--platform", "-p", help="Mobile platform (ios, android, cross)"),
-    save: Optional[Path] = typer.Option(None, "--save", help="Save the generated code to a file"),
-):
-    """Generate mobile app development code or guidance."""
-    full_prompt = " ".join(prompt)
-    
-    platform_map = {
-        "ios": "iOS (Swift/SwiftUI)",
-        "android": "Android (Kotlin)",
-        "cross": "cross-platform (React Native/Flutter)"
-    }
-    
-    platform_display = platform_map.get(platform.lower(), platform)
-    
-    prompt = f"""
-    Generate {platform_display} mobile app development code/guidance for:
-    
-    {full_prompt}
-    
-    Include:
-    1. App architecture
-    2. Key components/screens
-    3. Implementation details
-    4. Best practices
-    5. Performance considerations
-    """
-    
-    system_prompt = f"""
-    You are NimbusCode, an expert in {platform_display} mobile app development.
-    Provide detailed, practical guidance for building mobile applications.
-    Focus on user experience, performance, and maintainable code architecture.
-    """
-    
-    with console.status("[bold green]Generating mobile app guidance..."):
-        response = query_openrouter(prompt, system_prompt)
-    
-    console.print(Panel(Markdown(response), title=f"{platform_display.capitalize()} App Development", border_style="blue"))
-    
-    # Save the response if requested
-    if save:
-        with open(save, "w") as f:
-            f.write(response)
-        console.print(f"[green]Mobile app guidance saved to {save}[/green]")
-
-@app.command("interactive")
-def interactive_mode():
-    """Start an interactive coding session with the AI."""
-    console.print("[bold blue]NimbusCode Interactive Mode[/bold blue]")
-    console.print("Type your questions or 'exit' to quit.")
-    
-    history = []
-    
-    system_prompt = """
-    You are NimbusCode, an expert programming assistant in an interactive session.
-    Provide helpful, concise responses to the user's coding questions.
-    Remember the context of the conversation and refer back to previous exchanges when relevant.
-    """
-    
-    while True:
         try:
-            user_input = Prompt.ask("\n[bold green]You[/bold green]")
-            
-            if user_input.lower() in ("exit", "quit", "q"):
+            response = requests.post(API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error: Failed to communicate with OpenRouter API: {e}")
+            sys.exit(1)
+    
+    def ask(self, question: str, model: str = None) -> str:
+        """Ask a coding question."""
+        messages = [
+            {"role": "system", "content": "You are a helpful coding assistant. Provide concise, accurate answers to coding questions."},
+            {"role": "user", "content": question}
+        ]
+        
+        response = self._make_request(messages, model)
+        return response["choices"][0]["message"]["content"]
+    
+    def generate(self, description: str, language: str = None, model: str = None) -> str:
+        """Generate code based on a description."""
+        content = f"Generate code for: {description}"
+        if language:
+            content += f"\nLanguage: {language}"
+        
+        messages = [
+            {"role": "system", "content": "You are a code generator. Create clean, efficient, and well-documented code based on descriptions."},
+            {"role": "user", "content": content}
+        ]
+        
+        response = self._make_request(messages, model)
+        return response["choices"][0]["message"]["content"]
+    
+    def improve(self, code: str, model: str = None) -> str:
+        """Improve existing code."""
+        messages = [
+            {"role": "system", "content": "You are a code reviewer. Suggest improvements to make the code more efficient, readable, and maintainable."},
+            {"role": "user", "content": f"Improve this code:\n\n```\n{code}\n```"}
+        ]
+        
+        response = self._make_request(messages, model)
+        return response["choices"][0]["message"]["content"]
+    
+    def explain(self, code: str, model: str = None) -> str:
+        """Explain code."""
+        messages = [
+            {"role": "system", "content": "You are a code explainer. Break down complex code into understandable explanations."},
+            {"role": "user", "content": f"Explain this code:\n\n```\n{code}\n```"}
+        ]
+        
+        response = self._make_request(messages, model)
+        return response["choices"][0]["message"]["content"]
+    
+    def cloud(self, description: str, provider: str = "aws", model: str = None) -> str:
+        """Generate cloud deployment guidance."""
+        messages = [
+            {"role": "system", "content": "You are a cloud deployment expert. Provide clear instructions for deploying applications to cloud platforms."},
+            {"role": "user", "content": f"Provide deployment instructions for {provider} for: {description}"}
+        ]
+        
+        response = self._make_request(messages, model)
+        return response["choices"][0]["message"]["content"]
+    
+    def mobile(self, description: str, platform: str = "cross", model: str = None) -> str:
+        """Generate mobile development guidance."""
+        messages = [
+            {"role": "system", "content": "You are a mobile development expert. Provide guidance for building mobile applications."},
+            {"role": "user", "content": f"Provide {platform} platform mobile development guidance for: {description}"}
+        ]
+        
+        response = self._make_request(messages, model)
+        return response["choices"][0]["message"]["content"]
+    
+    def interactive(self, model: str = None) -> None:
+        """Start an interactive session."""
+        print("NimbusCode Interactive Mode (type 'exit' to quit)")
+        print("------------------------------------------------")
+        
+        messages = [
+            {"role": "system", "content": "You are a helpful coding assistant. Provide concise, accurate answers to coding questions."}
+        ]
+        
+        while True:
+            try:
+                user_input = input("\n> ")
+                if user_input.lower() in ("exit", "quit"):
+                    break
+                
+                messages.append({"role": "user", "content": user_input})
+                response = self._make_request(messages, model)
+                assistant_response = response["choices"][0]["message"]["content"]
+                
+                print("\n" + assistant_response)
+                messages.append({"role": "assistant", "content": assistant_response})
+                
+            except KeyboardInterrupt:
+                print("\nExiting interactive mode.")
                 break
+    
+    def list_models(self) -> None:
+        """List available free models from OpenRouter."""
+        if not self.api_key:
+            print("Error: API key not set. Use 'nimbuscode config --api-key YOUR_API_KEY' or set the OPENROUTER_API_KEY environment variable.")
+            sys.exit(1)
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.get("https://openrouter.ai/api/v1/models", headers=headers)
+            response.raise_for_status()
+            models = response.json()["data"]
             
-            # Add to conversation history
-            history.append({"role": "user", "content": user_input})
+            print("Available Free Models:")
+            print("---------------------")
             
-            # Prepare the full conversation context
-            full_prompt = "\n\n".join([
-                f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
-                for msg in history
-            ])
+            free_models = [model for model in models if model.get("pricing", {}).get("prompt") == 0 and model.get("pricing", {}).get("completion") == 0]
             
-            with console.status("[bold green]Thinking..."):
-                response = query_openrouter(full_prompt, system_prompt)
+            if not free_models:
+                print("No free models available.")
+                return
             
-            # Add response to history
-            history.append({"role": "assistant", "content": response})
+            for model in free_models:
+                print(f"ID: {model['id']}")
+                print(f"Name: {model['name']}")
+                print(f"Context Length: {model.get('context_length', 'Unknown')}")
+                print("---------------------")
             
-            # Display the response
-            console.print("\n[bold blue]NimbusCode:[/bold blue]")
-            console.print(Markdown(response))
-            
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Exiting interactive mode...[/yellow]")
-            break
-        except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
+        except requests.exceptions.RequestException as e:
+            print(f"Error: Failed to fetch models: {e}")
+            sys.exit(1)
+
+def main():
+    nimbus = NimbusCode()
+    
+    parser = argparse.ArgumentParser(description="NimbusCode - A lightweight AI coding assistant")
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+    
+    # Config command
+    config_parser = subparsers.add_parser("config", help="Configure NimbusCode")
+    config_parser.add_argument("--api-key", help="Set OpenRouter API key")
+    
+    # Ask command
+    ask_parser = subparsers.add_parser("ask", help="Ask a coding question")
+    ask_parser.add_argument("question", help="The question to ask")
+    ask_parser.add_argument("--model", help="Specify the model to use")
+    
+    # Generate command
+    generate_parser = subparsers.add_parser("generate", help="Generate code")
+    generate_parser.add_argument("description", help="Description of the code to generate")
+    generate_parser.add_argument("--language", help="Programming language")
+    generate_parser.add_argument("--model", help="Specify the model to use")
+    generate_parser.add_argument("--save", help="Save output to file")
+    
+    # Improve command
+    improve_parser = subparsers.add_parser("improve", help="Improve existing code")
+    improve_parser.add_argument("file", help="File containing code to improve")
+    improve_parser.add_argument("--model", help="Specify the model to use")
+    improve_parser.add_argument("--save", help="Save output to file")
+    
+    # Explain command
+    explain_parser = subparsers.add_parser("explain", help="Explain code")
+    explain_parser.add_argument("file", help="File containing code to explain")
+    explain_parser.add_argument("--model", help="Specify the model to use")
+    
+    # Cloud command
+    cloud_parser = subparsers.add_parser("cloud", help="Get cloud deployment guidance")
+    cloud_parser.add_argument("description", help="Description of the deployment")
+    cloud_parser.add_argument("--provider", choices=["aws", "azure", "gcp"], default="aws", help="Cloud provider")
+    cloud_parser.add_argument("--model", help="Specify the model to use")
+    
+    # Mobile command
+    mobile_parser = subparsers.add_parser("mobile", help="Get mobile development guidance")
+    mobile_parser.add_argument("description", help="Description of the mobile app")
+    mobile_parser.add_argument("--platform", choices=["ios", "android", "cross"], default="cross", help="Mobile platform")
+    mobile_parser.add_argument("--model", help="Specify the model to use")
+    
+    # Interactive command
+    interactive_parser = subparsers.add_parser("interactive", help="Start interactive mode")
+    interactive_parser.add_argument("--model", help="Specify the model to use")
+    
+    # Models command
+    models_parser = subparsers.add_parser("models", help="List available free models")
+    
+    args = parser.parse_args()
+    
+    if args.command == "config":
+        if args.api_key:
+            nimbus.set_api_key(args.api_key)
+        else:
+            parser.print_help()
+    
+    elif args.command == "ask":
+        response = nimbus.ask(args.question, args.model)
+        print(textwrap.fill(response, width=80))
+    
+    elif args.command == "generate":
+        response = nimbus.generate(args.description, args.language, args.model)
+        if args.save:
+            with open(args.save, "w") as f:
+                f.write(response)
+            print(f"Code saved to {args.save}")
+        else:
+            print(response)
+    
+    elif args.command == "improve":
+        with open(args.file, "r") as f:
+            code = f.read()
+        response = nimbus.improve(code, args.model)
+        if args.save:
+            with open(args.save, "w") as f:
+                f.write(response)
+            print(f"Improved code saved to {args.save}")
+        else:
+            print(response)
+    
+    elif args.command == "explain":
+        with open(args.file, "r") as f:
+            code = f.read()
+        response = nimbus.explain(code, args.model)
+        print(textwrap.fill(response, width=80))
+    
+    elif args.command == "cloud":
+        response = nimbus.cloud(args.description, args.provider, args.model)
+        print(textwrap.fill(response, width=80))
+    
+    elif args.command == "mobile":
+        response = nimbus.mobile(args.description, args.platform, args.model)
+        print(textwrap.fill(response, width=80))
+    
+    elif args.command == "interactive":
+        nimbus.interactive(args.model)
+    
+    elif args.command == "models":
+        nimbus.list_models()
+    
+    else:
+        parser.print_help()
 
 if __name__ == "__main__":
-    app()
+    main()
