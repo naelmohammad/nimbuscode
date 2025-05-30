@@ -3,11 +3,10 @@ use clap::{Parser, Subcommand};
 use configparser::ini::Ini;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::env;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
 use textwrap::fill;
 
 const API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
@@ -101,7 +100,7 @@ enum Commands {
     Models,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 struct Message {
     role: String,
     content: String,
@@ -180,7 +179,6 @@ impl NimbusCode {
             self.config
                 .get("API", "default_model")
                 .unwrap_or_else(|| DEFAULT_MODEL.to_string())
-                .as_str()
         });
 
         let mut headers = HeaderMap::new();
