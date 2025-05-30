@@ -1,33 +1,25 @@
-# NimbusCode Updates
+# Updates
 
-## 2025-05-29: Multi-language Implementation
+## Version 0.1.0 (Initial Release) - May 30, 2025
 
-### Major Updates
-- Added Rust implementation alongside Python version
-- Both implementations share the same core functionality and API design
-- Optimized for minimal memory footprint and disk usage
-- Validated and tested both implementations
+### Added
+- Initial release of NimbusCode with both Python and Rust implementations
+- Core functionality:
+  - Ask coding questions
+  - Generate code from descriptions
+  - Improve existing code
+  - Explain complex code
+  - Get cloud deployment guidance
+  - Get mobile development guidance
+  - Interactive mode for conversations
+  - List available free models from OpenRouter
+- Configuration management for API keys
+- Support for all free models from OpenRouter
+- Comprehensive documentation and examples
 
-### Python Version Updates
-- Refactored code for better performance
-- Added more comprehensive error handling
-- Improved documentation with usage examples
-- Added unit tests
-
-### Rust Version Added
-- Created a complete Rust implementation with the same features
-- Used minimal dependencies to keep binary size small
-- Implemented all core features from Python version
-- Added Cargo configuration for easy building
-
-### Testing Results
-- Python version memory usage: ~15-20MB during operation
-- Rust version memory usage: ~5-10MB during operation
-- Both versions provide consistent responses
-- Response time comparable between implementations
-
-### Next Steps
-- Add more specialized coding templates
-- Implement caching for frequently used prompts
-- Add support for more programming languages
-- Create installation packages for easier distribution
+### Technical Details
+- Python implementation uses minimal dependencies (only requests)
+- Rust implementation uses tokio for async runtime
+- Both versions share the same command-line interface
+- Configuration stored in user's config directory
+- Support for environment variables for API keys

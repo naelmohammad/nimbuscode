@@ -15,9 +15,11 @@ A lightweight, portable AI coding assistant powered by OpenRouter's free models.
 
 ## Installation
 
+### Python Version
+
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/nimbuscode.git
+git clone https://github.com/naelmohammad/nimbuscode.git
 cd nimbuscode
 
 # Install dependencies
@@ -30,13 +32,30 @@ chmod +x nimbuscode.py
 ln -s $(pwd)/nimbuscode.py /usr/local/bin/nimbuscode
 ```
 
+### Rust Version
+
+```bash
+# Clone the repository
+git clone https://github.com/naelmohammad/nimbuscode.git
+cd nimbuscode
+
+# Build the Rust version
+cargo build --release
+
+# Optional: Create a symlink to make it available system-wide
+ln -s $(pwd)/target/release/nimbuscode /usr/local/bin/nimbuscode
+```
+
 ## Configuration
 
 Before using NimbusCode, you need to set up your OpenRouter API key:
 
 ```bash
-# Set your API key
+# Set your API key (Python version)
 ./nimbuscode.py config --api-key YOUR_API_KEY
+
+# Set your API key (Rust version)
+./target/release/nimbuscode config --api-key YOUR_API_KEY
 
 # Alternatively, set it as an environment variable
 export OPENROUTER_API_KEY=your_api_key
@@ -99,6 +118,7 @@ export OPENROUTER_API_KEY=your_api_key
 - **Versatile**: Helps with various programming tasks
 - **Efficient**: Quick responses with minimal resource usage
 - **Educational**: Explains concepts and provides learning opportunities
+- **Dual Implementation**: Available in both Python and Rust
 
 ## License
 
