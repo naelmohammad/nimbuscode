@@ -1,5 +1,20 @@
 # Updates
 
+## Version 0.2.0 (May 30, 2025)
+
+### Added
+- Separated Python and Rust implementations into their own directories
+- Added dedicated README files for each implementation
+- Improved project structure for better organization
+- Added version tags for better version control
+
+### Technical Details
+- Python implementation remains fully functional
+- Rust implementation structure is in place (needs compilation fixes)
+- Both implementations share the same command-line interface
+- Configuration stored in user's config directory
+- Support for environment variables for API keys
+
 ## Version 0.1.0 (Initial Release) - May 30, 2025
 
 ### Added
@@ -16,10 +31,3 @@
 - Configuration management for API keys
 - Support for all free models from OpenRouter
 - Comprehensive documentation and examples
-
-### Technical Details
-- Python implementation uses minimal dependencies (only requests)
-- Rust implementation uses tokio for async runtime
-- Both versions share the same command-line interface
-- Configuration stored in user's config directory
-- Support for environment variables for API keys
