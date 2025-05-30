@@ -1,5 +1,20 @@
 # Updates
 
+## Version 0.2.1 (May 30, 2025)
+
+### Added
+- Improved repository structure
+- Enhanced Rust implementation with better code organization
+- Split Rust code into lib.rs and main.rs
+- Added unit tests for Rust implementation
+- Updated documentation for both implementations
+
+### Technical Details
+- Python implementation remains fully functional
+- Rust implementation has improved structure (still needs compilation fixes)
+- Both implementations maintain the same command-line interface
+- Added version tags for better version control
+
 ## Version 0.2.0 (May 30, 2025)
 
 ### Added
